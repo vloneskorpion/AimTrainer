@@ -15,7 +15,7 @@ Mesh::Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std:
 
 void Mesh::Draw(Shader& shader) const
 {
-    
+
     auto diffuseNr = uint32_t{1};
     auto specularNr = uint32_t{1};
 

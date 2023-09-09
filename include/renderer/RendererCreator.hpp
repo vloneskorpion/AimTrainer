@@ -64,17 +64,28 @@ namespace Shapes
         
         .vertexData{.vertices{
         // positions         // normals           // texture coords
-       -0.1f,  0.5f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
-        0.1f,  0.5f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
-        0.1f, -0.5f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
-       -0.1f, -0.5f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
-        0.5f,  0.1f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
-       -0.5f,  0.1f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
-       -0.5f, -0.1f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
-        0.5f, -0.1f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f},
+       -0.05f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
+        0.05f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
+        0.0f, -0.05f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,
+        0.0f,  0.05f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f},
 
         .vertexLayout{3, 3 ,2}},
         .primivite{GL_LINES}};
+    };
+
+    struct Quad
+    {
+        const static inline auto data = RenderData{
+        
+        .vertexData{.vertices{
+        // positions        // texture Coords
+        -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+         1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+         1.0f, -1.0f, 0.0f, 1.0f, 0.0f},
+
+        .vertexLayout{3, 2}},
+        .primivite{GL_TRIANGLE_STRIP}};
     };
 }
 // namespace

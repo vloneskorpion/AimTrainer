@@ -34,7 +34,10 @@ class Camera
         glm::mat4 getViewMatrix() const;
 
         inline void setMouseSensitivity(float mouseSensitivity) { m_MouseSensitivity = mouseSensitivity; }
+        inline void disable() { m_Enabled = false; }
         inline float getFov() const { return m_Fov; }
+        inline glm::vec3 getFront() const { return m_Front; }
+        inline glm::vec3 getPosition () const { return m_Position; }
 
     private:
         WindowData& m_WindowData;
@@ -51,4 +54,5 @@ class Camera
         float m_MouseSensitivity;
         bool m_FirstMouseTick;
         double m_lastXMousePos, m_lastYMousePos;
+        bool m_Enabled{true};
 };

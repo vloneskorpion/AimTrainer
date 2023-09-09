@@ -19,7 +19,7 @@ namespace
     }
 }
 
-RendererBase::RendererBase(Shader& shader, const RenderData& renderData) :
+RendererBase::RendererBase(std::reference_wrapper<Shader> shader, const RenderData& renderData) :
     m_Shader{shader},
     m_VertexArray{},
     m_VertexBuffer{nullptr},
@@ -44,12 +44,12 @@ RendererBase::~RendererBase()
 
 void RendererBase::Draw() const
 {
-    m_Shader.Bind();
+    m_Shader.get().Bind();
     m_VertexArray.Bind();
     GLCall(glDrawArrays(m_Primivite, 0, m_numberOfElements));
 }
 
-void RendererBase::setShader(Shader& shader)
+void RendererBase::setShader(std::reference_wrapper<Shader> shader)
 {
     m_Shader = shader;
 }

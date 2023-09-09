@@ -38,6 +38,10 @@ void Camera::updateVectors()
 
 void Camera::processMouseMovement()
 {
+    if(not m_Enabled)
+    {
+        return;
+    }
     auto offsetVec = calculateMousePosOffsets();
     
     m_Yaw += offsetVec.x * m_MouseSensitivity;
@@ -74,7 +78,8 @@ void Camera::processKeyboardMovement(const Direction direction, const float delt
 
 glm::vec2 Camera::calculateMousePosOffsets()
 {
-    const auto [x, y] = m_WindowData.getMouseData();
+    const auto x = m_WindowData.getMouseData().x;
+    const auto y = m_WindowData.getMouseData().y;
     
     if(m_FirstMouseTick)
     {

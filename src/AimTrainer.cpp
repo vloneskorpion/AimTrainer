@@ -17,9 +17,14 @@
 #include "renderer/RendererCreator.hpp"
 #include "RandomGenerator.hpp"
 #include "Camera.hpp"
+#include "ObjectPicker.hpp"
 
-#include "handler/MovementHandler.hpp"
+#include "data/Matrices.hpp"
+
 #include "handler/KeyHandler.hpp"
+
+#include "utils/Utils.hpp"
+#include "data/Key.hpp"
 
 #include <vector>
 
@@ -30,20 +35,41 @@ namespace
             glfwDestroyWindow(window);
         }
     };
+
+    glm::vec2 cameraFrontToScreenCoords(glm::vec3 cameraPosition, glm::vec3 cameraFront, glm::mat4 projectionMatrix, int screenWidth, int screenHeight, Camera& camera)
+    {
+        // Convert world space to clip space
+        /*
+            While transforming to camera space, coords will be always (0, 0, 0, 1) and it will be clipped as it is outside of the frustum.
+            So we need to add the camera position to the front vector to get the correct clip space position.
+        */
+        glm::vec4 clipSpacePosition = projectionMatrix * camera.getViewMatrix() * glm::vec4(camera.getPosition() + camera.getFront(), 1.0f);
+
+        // Convert to normalized device coordinates
+        clipSpacePosition /= clipSpacePosition.w;
+
+        // Convert clip space to screen space
+        float xScreen = (clipSpacePosition.x + 1.0f) * 0.5f * screenWidth;
+        float yScreen = (1.0f - clipSpacePosition.y) * 0.5f * screenHeight;
+
+        return {xScreen, yScreen};
+    }
 }
 
 AimTrainer::AimTrainer() :
         m_Window{nullptr}
-    ,   m_Gui{nullptr}
+    ,   m_ImGuiWrapper{nullptr}
     ,   m_Width{800}
     ,   m_Height{600}
-    ,   m_WindowData{std::make_unique<WindowData>()}
+    ,   m_WindowData{std::make_unique<WindowData>(m_Width, m_Height)}
     ,   m_Camera{*m_WindowData, glm::vec3{0.0f, 0.0f, 15.0f}, 0.05f}
     ,   m_Handlers{}
+    ,   m_Shaders{}
 {
     initOpenGl();
-    initGui();
+    //initGui();
     registerHandlers();
+    createShaders();
 }
 
 AimTrainer::~AimTrainer()
@@ -53,21 +79,26 @@ AimTrainer::~AimTrainer()
 
 void AimTrainer::run()
 {
-    // Basic shader setup
-    auto shader = Shader{FilePathManager::getPath("shaderTest.shader")};
-    shader.Bind();
+    m_Shaders.at("cube")->Bind();
 
-    auto renderer = RenedererCreator::create<Shapes::Cube>(shader);
+    auto cubeRenderer = RenedererCreator::create<Shapes::Cube>(*m_Shaders.at("cube"));
+    auto quadRenderer = RenedererCreator::create<Shapes::Quad>(*m_Shaders.at("quad"));
+    auto crosshairRenderer = RenedererCreator::create<Shapes::Crosshair>(*m_Shaders.at("crosshair"));
 
     auto random = RandomGenerator{};
 
     std::vector<glm::vec3> positions;
-
     for(int i = 0; i < 10; i++)
     {
         auto pos = random.getRandomNumbers(3, -5.0f, 5.0f);
         positions.push_back({pos[0], pos[1], pos[2]});
     }
+
+    auto& matrices = m_WindowData->getMatrices();
+
+    ObjectPicker picker{*m_WindowData};
+
+    ImGuiContext* ptr = nullptr;
 
     while (not glfwWindowShouldClose(m_Window.get()))
     {
@@ -75,28 +106,95 @@ void AimTrainer::run()
         processInput();
         update();
 
-        m_Gui->NewFrame();
-
-        GLCall(glClearColor(0.2f, 0.3f, 0.3f, 1.0f));
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        render();
-
-        auto model = glm::mat4(1.0f);
-        auto proj = glm::perspective(glm::radians(m_Camera.getFov()), 800.0f/600.0f, 0.1f, 100.0f);
-        auto view = m_Camera.getViewMatrix();
-
-        for(size_t i = 0; i < 10; i++)
+        if(m_WindowData->getMenuEnabled())
         {
-            model = glm::translate(glm::mat4(1.0f), positions[i]);
-            const auto mvp = proj * view * model;
-            shader.SetUniformMatrix4f("u_MVP", mvp);
-            renderer.Draw();
+            ptr = ImGui::CreateContext();
+            ImGui_ImplGlfwGL3_Init(m_Window.get(), true);
+            ImGui::StyleColorsDark();
+            ImGui::GetIO().MousePos = {m_WindowData->getMouseData().x, m_WindowData->getMouseData().y};
+            ImGui::GetIO().Fonts->AddFontDefault();
+            //ImGui::GetIO().Fonts->GetTexDataAsRGBA32();
+            ImGui::GetIO().WantCaptureKeyboard = true;
+            ImGui::GetIO().WantCaptureMouse = true;
+            m_ImGuiWrapper->NewFrame();
         }
 
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        matrices.model = glm::mat4(1.0f);
+        matrices.view = m_Camera.getViewMatrix();
+        matrices.projection = glm::perspective(glm::radians(m_Camera.getFov()), float(m_Width) / float(m_Height), 0.1f, 100.0f);
 
-        m_Gui->Render();
+        // Picking phase
+        picker.Bind();
+        GLCall(glClearColor(0.0f, 0.0f, 0.0f, 1.0f));
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        m_Shaders.at("picking")->Bind();
+        for(size_t i = 0; i < positions.size(); i++)
+        {
+            const auto model = glm::translate(glm::mat4(1.0f), positions[i]);
+            const auto mvp = matrices.projection * matrices.view * model;
+            m_Shaders.at("picking")->SetUniformMatrix4f("u_MVP", mvp);
+            m_Shaders.at("picking")->SetUniform1i("objectIndex", i + 1);
+            m_Shaders.at("picking")->SetUniform1i("drawIndex", 0);
+            cubeRenderer.setShader(std::ref(*m_Shaders.at("picking")));
+            cubeRenderer.Draw();
+        }
+        picker.Unbind();
+
+        GLCall(glClearColor(0.0f, 0.0f, 0.0f, 1.0f));
+        GLCall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+        // Render phase
+        {
+            int clickedObject = 0;
+            if(auto data = utils::getWindowData(m_Window.get()); data not_eq nullptr)
+            {
+                const auto crosshairScreenCoords = cameraFrontToScreenCoords(m_Camera.getPosition(), m_Camera.getFront(), matrices.projection, m_Width, m_Height, m_Camera);
+                auto pixelData = picker.getPixelData(crosshairScreenCoords.x, m_Height - crosshairScreenCoords.y);
+                clickedObject = pixelData.objectId;
+                auto& mouse = data->getMouseData();
+
+                if(clickedObject not_eq 0 && mouse.isLeftButtonPressed)
+                {
+                    clickedObject -= 1;
+                    positions.erase(positions.begin() + clickedObject);
+                    mouse.isLeftButtonPressed = false;
+                }
+            }
+
+            m_Shaders.at("cube")->Bind();
+            for(size_t i = 0; i < positions.size(); i++)
+            {
+                const auto model = glm::translate(glm::mat4(1.0f), positions[i]);
+                const auto mvp = matrices.projection * matrices.view * model;
+                m_Shaders.at("cube")->SetUniformMatrix4f("u_MVP", mvp);
+                cubeRenderer.setShader(std::ref(*m_Shaders.at("cube")));
+                cubeRenderer.Draw();
+            }
+
+            GLCall(glDisable(GL_DEPTH_TEST));
+            m_Shaders.at("crosshair")->Bind();
+            matrices.model = glm::mat4(1.0f);
+            const auto mvp = matrices.model;
+            m_Shaders.at("crosshair")->SetUniformMatrix4f("u_MVP", mvp);
+            crosshairRenderer.Draw();
+            GLCall(glEnable(GL_DEPTH_TEST));
+        }
+
+        //Render quad
+        // {
+        //     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        //     quadShader.Bind();
+        //     glActiveTexture(GL_TEXTURE0);
+        //     glBindTexture(GL_TEXTURE_2D, picker.getColorTexture());
+        //     quadRenderer.Draw();
+        // }
+
+        if(m_WindowData->getMenuEnabled())
+        {
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        m_ImGuiWrapper->Render();
+        ImGui::DestroyContext(ptr);
+        ptr = nullptr;
+        }
 
         GLCall(glfwSwapBuffers(m_Window.get()));
         GLCall(glfwPollEvents());
@@ -132,7 +230,6 @@ void AimTrainer::initOpenGl()
     m_Window = std::shared_ptr<GLFWwindow>{glfwCreateWindow(m_Width, m_Height, "AimTrainer", NULL, NULL),
         GLFWWindowDeleter()};
     glfwSetWindowUserPointer(m_Window.get(), m_WindowData.get());
-    setupCallbacks();
 
     if(m_Window.get() == NULL)
     {
@@ -140,8 +237,10 @@ void AimTrainer::initOpenGl()
         glfwTerminate();
     }
 
+    setupCallbacks();
     glfwMakeContextCurrent(m_Window.get());
     glfwSetInputMode(m_Window.get(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    //glfwSetInputMode(m_Window.get(), GLFW_STICKY_MOUSE_BUTTONS, 1);
 
     if(not gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -159,7 +258,7 @@ void AimTrainer::setupCallbacks()
 {
     glfwSetCursorPosCallback(m_Window.get(), [](GLFWwindow* window, double xPos, double yPos)
         {
-            if(auto data = static_cast<WindowData*>(glfwGetWindowUserPointer(window)); data not_eq nullptr)
+            if(auto data = utils::getWindowData(window); data not_eq nullptr)
             {
                 auto& mouse = data->getMouseData();
                 mouse.x = xPos;
@@ -168,22 +267,47 @@ void AimTrainer::setupCallbacks()
             }
             LOG(ERROR) << "Failed to get window data";
         });
+    
+    glfwSetMouseButtonCallback(m_Window.get(), [](GLFWwindow* window, int button, int action, int mods)
+        {
+            if(auto data = utils::getWindowData(window); data not_eq nullptr)
+            {
+                auto& mouse = data->getMouseData().isLeftButtonPressed;
+                if(button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_PRESS)
+                {
+                    mouse = true;
+                }
+                else if(button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_RELEASE)
+                {
+                    mouse = false;
+                }
+                return;
+            }
+            LOG(ERROR) << "Failed to get window data";
+        });
 }
 
 void AimTrainer::registerHandlers()
 {
-    m_Handlers.push_back(std::make_unique<MovementHandler>(m_Window, m_Camera));
-    m_Handlers.push_back(std::make_unique<KeyHandler>(m_Window));
+    m_Handlers.push_back(std::make_unique<KeyHandler>(m_Window, m_Camera));
+}
+
+void AimTrainer::createShaders()
+{
+    m_Shaders.emplace("cube", std::make_unique<Shader>(FilePathManager::getPath("shaderTest.shader")));
+    m_Shaders.emplace("crosshair", std::make_unique<Shader>(FilePathManager::getPath("crosshair.shader")));
+    m_Shaders.emplace("picking", std::make_unique<Shader>(FilePathManager::getPath("picking.shader")));
+    m_Shaders.emplace("quad", std::make_unique<Shader>(FilePathManager::getPath("quad.shader")));
 }
 
 void AimTrainer::initGui()
 {
-    m_Gui = std::make_unique<Gui>(m_Window);
+    m_ImGuiWrapper = std::make_unique<ImGuiWrapper>(m_Window);
 }
 
 void AimTrainer::calculateDeltaTime()
 {
-    if(auto data = static_cast<WindowData*>(glfwGetWindowUserPointer(m_Window.get())); data not_eq nullptr)
+    if(auto data = utils::getWindowData(m_Window.get()); data not_eq nullptr)
     {
         auto currentFrame = glfwGetTime();
         auto& [lastFrame, deltaTime] = data->getTimeData();

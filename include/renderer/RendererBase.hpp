@@ -5,6 +5,7 @@
 #include "IndexBuffer.hpp"
 #include "Shader.hpp"
 #include <memory>
+#include <functional>
 
 struct VertexData
 {
@@ -22,13 +23,13 @@ class RendererBase
 {
     public:
         void Draw() const;
-        void setShader(Shader& shader);
+        void setShader(std::reference_wrapper<Shader> shader);
 
         ~RendererBase();
-        explicit RendererBase(Shader& shader, const RenderData& vertexData);
+        explicit RendererBase(std::reference_wrapper<Shader>shader, const RenderData& vertexData);
 
     private:
-        Shader& m_Shader;
+        std::reference_wrapper<Shader> m_Shader;
         VertexArray m_VertexArray;
         std::unique_ptr<VertexBuffer> m_VertexBuffer;
         const uint32_t m_numberOfElements;

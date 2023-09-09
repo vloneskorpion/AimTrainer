@@ -1,18 +1,21 @@
 #pragma once
 
 #include <GLFW/glfw3.h>
+#include <imgui/imgui.h>
 #include <memory>
 
-class Gui
+class ImGuiWrapper
 {
     public:
-        Gui(std::shared_ptr<GLFWwindow> window);
-        ~Gui();
+        ImGuiWrapper(std::shared_ptr<GLFWwindow> window);
+        ~ImGuiWrapper();
     
         void NewFrame();
         void Render();
         void Destroy();
+        void handleKey();
 
     private:
         std::shared_ptr<GLFWwindow> m_Window;
+        ImGuiIO* m_ImGuiIo;
 };
